@@ -1,28 +1,17 @@
 #
 # RIOT Dockerfile
 #
-# The resulting image will contain everything needed to build RIOT for all
-# supported platforms. This is the largest build image, it takes about 1.5 GB in
-# total.
+# The resulting image will contain everything needed to build RIOT with a recent compiler for STM32.
 #
-# Setup:
-# 1. Install docker, add yourself to docker group, enable docker, relogin
-#
-# Use prebuilt image:
-# 1. Prebuilt image can be pulled from Docker Hub registry with:
-#      # docker pull riot/riotbuild
-# 
-# Use own build image:
-# 1. Build own image based on latest base OS image:
-#      # docker build --pull -t riotbuild .
+# Modified RIOT-OS/riotdocker image
 #
 # Usage:
 # 1. cd to riot root
 # 2. # docker run -i -t -u $UID -v $(pwd):/data/riotbuild riotbuild ./dist/tools/compile_test/compile_test.py
 
-FROM ubuntu:bionic
+FROM ubuntu:focal
 
-LABEL maintainer="Kaspar Schleiser <kaspar@riot-os.org>"
+LABEL maintainer="Jens Wetterich"
 
 ENV DEBIAN_FRONTEND noninteractive
 
@@ -33,9 +22,6 @@ ENV LANG C.UTF-8
 # - update the package index files to latest available version
 # - native platform development and build system functionality (about 400 MB installed)
 # - Cortex-M development (about 550 MB installed), through the gcc-arm-embedded PPA
-# - MSP430 development (about 120 MB installed)
-# - AVR development (about 110 MB installed)
-# - LLVM/Clang build environment (about 125 MB installed)
 # All apt files will be deleted afterwards to reduce the size of the container image.
 # The OS must not be updated by apt. Docker image should be build against the latest
 #  updated base OS image. This can be forced with `--pull` flag.
@@ -49,14 +35,12 @@ RUN \
     apt-get update \
     && echo 'Installing native toolchain and build system functionality' >&2 && \
     apt-get -y --no-install-recommends install \
-        afl++ \
         automake \
         bsdmainutils \
         build-essential \
         ca-certificates \
         ccache \
         cmake \
-        coccinelle \
         curl \
         cppcheck \
         doxygen \
@@ -70,10 +54,8 @@ RUN \
         libpcre3 \
         libtool \
         m4 \
-        ninja-build \
         parallel \
         pcregrep \
-        protobuf-compiler \
         python \
         python3 \
         python3-dev \
@@ -85,37 +67,18 @@ RUN \
         ssh-client \
         subversion \
         unzip \
-        vera++ \
         vim-common \
         wget \
         xsltproc \
-    && echo 'Installing MSP430 toolchain' >&2 && \
-    apt-get -y --no-install-recommends install \
-        gcc-msp430 \
-        msp430-libc \
-    && echo 'Installing AVR toolchain' >&2 && \
-    apt-get -y --no-install-recommends install \
-        gcc-avr \
-        binutils-avr \
-        avr-libc \
-    && echo 'Installing LLVM/Clang toolchain' >&2 && \
-    apt-get -y --no-install-recommends install \
-        llvm \
-        clang \
-        clang-tools \
-    && echo 'Installing socketCAN' >&2 && \
-    apt-get -y --no-install-recommends install \
-        libsocketcan-dev:i386 \
-        libsocketcan2:i386 \
     && echo 'Cleaning up installation files' >&2 && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Install ARM GNU embedded toolchain
 # For updates, see https://developer.arm.com/open-source/gnu-toolchain/gnu-rm/downloads
 ARG ARM_URLBASE=https://developer.arm.com/-/media/Files/downloads/gnu-rm
-ARG ARM_URL=${ARM_URLBASE}/9-2019q4/gcc-arm-none-eabi-9-2019-q4-major-x86_64-linux.tar.bz2
-ARG ARM_MD5=fe0029de4f4ec43cf7008944e34ff8cc
-ARG ARM_FOLDER=gcc-arm-none-eabi-9-2019-q4-major
+ARG ARM_URL=${ARM_URLBASE}/9-2020q2/gcc-arm-none-eabi-9-2020-q2-update-x86_64-linux.tar.bz2
+ARG ARM_MD5=2b9eeccc33470f9d3cda26983b9d2dc6
+ARG ARM_FOLDER=gcc-arm-none-eabi-9-2020-q2-update
 RUN echo 'Installing arm-none-eabi toolchain from arm.com' >&2 && \
     mkdir -p /opt && \
     curl -L -o /opt/gcc-arm-none-eabi.tar.bz2 ${ARM_URL} && \
@@ -128,40 +91,6 @@ RUN echo 'Installing arm-none-eabi toolchain from arm.com' >&2 && \
 
 ENV PATH ${PATH}:/opt/${ARM_FOLDER}/bin
 
-# Install MIPS binary toolchain
-# For updates: https://www.mips.com/develop/tools/codescape-mips-sdk/ (select "Codescape GNU Toolchain")
-ARG MIPS_VERSION=2018.09-03
-RUN echo 'Installing mips-mti-elf toolchain from mips.com' >&2 && \
-    mkdir -p /opt && \
-    curl -L "https://codescape.mips.com/components/toolchain/${MIPS_VERSION}/Codescape.GNU.Tools.Package.${MIPS_VERSION}.for.MIPS.MTI.Bare.Metal.CentOS-6.x86_64.tar.gz" -o - \
-        | tar -C /opt -zx && \
-    echo 'Removing documentation and translations' >&2 && \
-    rm -rf /opt/mips-mti-elf/*/share/{doc,info,man,locale} && \
-    echo 'Deduplicating binaries' && \
-    cd /opt/mips-mti-elf/*/mips-mti-elf/bin && \
-    for f in *; do test -f "../../bin/mips-mti-elf-$f" && ln -f "../../bin/mips-mti-elf-$f" "$f"; done && cd -
-
-ENV MIPS_ELF_ROOT /opt/mips-mti-elf/${MIPS_VERSION}
-
-ENV PATH ${PATH}:${MIPS_ELF_ROOT}/bin
-
-# Install RISC-V binary toolchain
-ARG RISCV_VERSION=8.2.0-2.2-20190521
-ARG RISCV_BUILD=0004
-RUN mkdir -p /opt && \
-        wget -q https://github.com/gnu-mcu-eclipse/riscv-none-gcc/releases/download/v${RISCV_VERSION}/gnu-mcu-eclipse-riscv-none-gcc-${RISCV_VERSION}-${RISCV_BUILD}-centos64.tgz -O- \
-        | tar -C /opt -xz && \
-    echo 'Removing documentation' >&2 && \
-      rm -rf /opt/gnu-mcu-eclipse/riscv-none-gcc/*/share/doc && \
-    echo 'Deduplicating binaries' >&2 && \
-    cd /opt/gnu-mcu-eclipse/riscv-none-gcc/*/riscv-none-embed/bin && \
-      for f in *; do test -f "../../bin/riscv-none-embed-$f" && \
-       ln -f "../../bin/riscv-none-embed-$f" "$f"; \
-      done && \
-    cd -
-
-ENV PATH $PATH:/opt/gnu-mcu-eclipse/riscv-none-gcc/${RISCV_VERSION}-${RISCV_BUILD}/bin
-
 # compile suid create_user binary
 COPY create_user.c /tmp/create_user.c
 RUN gcc -DHOMEDIR=\"/data/riotbuild\" -DUSERNAME=\"riotbuild\" /tmp/create_user.c -o /usr/local/bin/create_user \
@@ -169,98 +98,12 @@ RUN gcc -DHOMEDIR=\"/data/riotbuild\" -DUSERNAME=\"riotbuild\" /tmp/create_user.
     && chmod u=rws,g=x,o=- /usr/local/bin/create_user \
     && rm /tmp/create_user.c
 
-# Install complete ESP8266 toolchain in /opt/esp (139 MB after cleanup)
-# remember https://github.com/RIOT-OS/RIOT/pull/10801 when updating
-RUN echo 'Installing ESP8266 toolchain' >&2 && \
-    mkdir -p /opt/esp && \
-    cd /opt/esp && \
-    git clone https://github.com/gschorcht/xtensa-esp8266-elf && \
-    cd xtensa-esp8266-elf && \
-    git checkout -q 696257c2b43e2a107d3108b2c1ca6d5df3fb1a6f && \
-    rm -rf .git && \
-    cd /opt/esp && \
-    git clone https://github.com/gschorcht/RIOT-Xtensa-ESP8266-RTOS-SDK.git ESP8266_RTOS_SDK && \
-    cd ESP8266_RTOS_SDK/ && \
-    git checkout -q c0174eff7278eb5beea66ce1f65b7af57432d2a9 && \
-    rm -rf .git* docs examples Kconfig make README.md tools && \
-    cd components && \
-    rm -rf app_update aws_iot bootloader cjson coap espos esptool_py esp-tls \
-           freertos jsmn libsodium log mdns mqtt newlib partition_table \
-           pthread smartconfig_ack spiffs ssl tcpip_adapter vfs && \
-    find . -type f -name '*.[csS]' -exec rm {} \; && \
-    find . -type f -name '*.cpp' -exec rm {} \;
-
-ENV PATH $PATH:/opt/esp/xtensa-esp8266-elf/bin
-ENV ESP8266_RTOS_SDK_DIR /opt/esp/ESP8266_RTOS_SDK
-
-# Install ESP32 toolchain in /opt/esp (181 MB after cleanup)
-# remember https://github.com/RIOT-OS/RIOT/pull/10801 when updating
-RUN echo 'Installing ESP32 toolchain' >&2 && \
-    mkdir -p /opt/esp && \
-    cd /opt/esp && \
-    git clone https://github.com/espressif/esp-idf.git && \
-    cd esp-idf && \
-    git checkout -q f198339ec09e90666150672884535802304d23ec && \
-    git submodule update --init --recursive && \
-    rm -rf .git* docs examples make tools && \
-    rm -f add_path.sh CONTRIBUTING.rst Kconfig Kconfig.compiler && \
-    cd components && \
-    rm -rf app_trace app_update aws_iot bootloader bt coap console cxx \
-           esp_adc_cal espcoredump esp_http_client esp-tls expat fatfs \
-           freertos idf_test jsmn json libsodium log lwip mbedtls mdns \
-           micro-ecc nghttp openssl partition_table pthread sdmmc spiffs \
-           tcpip_adapter ulp vfs wear_levelling xtensa-debug-module && \
-    find . -name '*.[csS]' -exec rm {} \; && \
-    cd /opt/esp && \
-    git clone https://github.com/gschorcht/xtensa-esp32-elf.git && \
-    cd xtensa-esp32-elf && \
-    git checkout -q 414d1f3a577702e927973bd906357ee00d7a6c6c
-
-ENV PATH $PATH:/opt/esp/xtensa-esp32-elf/bin
-
-ARG PICOLIBC_REPO=https://github.com/keith-packard/picolibc
-ARG PICOLIBC_TAG=1.4.6
-ARG PICOLIBC_URL=${PICOLIBC_REPO}/archive/${PICOLIBC_TAG}.tar.gz
-ARG PICOLIBC_ARCHIVE=${PICOLIBC_TAG}.tar.gz
-
-RUN echo 'Building and Installing PicoLIBC' >&2 && \
-    pip3 install --no-cache-dir meson && \
-    mkdir -p /usr/src/picolibc && \
-    cd /usr/src/picolibc/ &&\
-    curl -L -o ${PICOLIBC_ARCHIVE} ${PICOLIBC_URL} && \
-    tar -xf ${PICOLIBC_ARCHIVE} && \
-    cd picolibc-${PICOLIBC_TAG}
-
-COPY cross-riscv-none-embed.txt /usr/src/picolibc/picolibc-${PICOLIBC_TAG}/
-
-RUN cd /usr/src/picolibc/picolibc-${PICOLIBC_TAG} && \
-    which riscv-none-embed-gcc && \
-    ls -al /opt/gnu-mcu-eclipse/riscv-none-gcc/*/bin && \
-    mkdir build-arm build-riscv build-esp32 && \
-    cd build-riscv && \
-    meson .. -Dtests=true -Dmultilib=false -Dincludedir=picolibc/riscv-none-embed/include -Dlibdir=picolibc/riscv-none-embed/lib --cross-file ../cross-riscv-none-embed.txt && \
-    ninja && ninja install && \
-    cd ../build-esp32 && \
-    sh ../do-esp32-configure && \
-    ninja && ninja install && \
-    cd ../build-arm && \
-    sh ../do-arm-configure && \
-    ninja && ninja install
-
-# No need to keep the sources around
-RUN rm -rf /usr/src/picolibc
-
 # RIOT toolchains
 ARG RIOT_TOOLCHAIN_GCC_VERSION=10.1.0
 ARG RIOT_TOOLCHAIN_PACKAGE_VERSION=18
 ARG RIOT_TOOLCHAIN_TAG=20200722112854-64162e7
 ARG RIOT_TOOLCHAIN_GCCPKGVER=${RIOT_TOOLCHAIN_GCC_VERSION}-${RIOT_TOOLCHAIN_PACKAGE_VERSION}
 ARG RIOT_TOOLCHAIN_SUBDIR=${RIOT_TOOLCHAIN_GCCPKGVER}-${RIOT_TOOLCHAIN_TAG}
-
-ARG MSP430_URL=https://github.com/RIOT-OS/toolchains/releases/download/${RIOT_TOOLCHAIN_SUBDIR}/riot-msp430-elf-${RIOT_TOOLCHAIN_GCCPKGVER}.tgz
-RUN echo 'Installing RIOT MSP430 ELF toolchain' >&2 && \
-        wget -q ${MSP430_URL} -O- | tar -C /opt -xz
-ENV PATH $PATH:/opt/riot-toolchain/msp430-elf/${RIOT_TOOLCHAIN_GCCPKGVER}/bin
 
 # install required python packages from file
 # numpy must be already installed before installing some other requirements (emlearn)
