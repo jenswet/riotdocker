@@ -1,7 +1,7 @@
 #
 # RIOT Dockerfile
 #
-# The resulting image will contain everything needed to build RIOT with a recent compiler for STM32.
+# The resulting image will contain everything needed to build RIOT with a recent compiler for STM32 and for ESP32.
 #
 # Modified RIOT-OS/riotdocker image
 #
@@ -97,6 +97,31 @@ RUN gcc -DHOMEDIR=\"/data/riotbuild\" -DUSERNAME=\"riotbuild\" /tmp/create_user.
     && chown root:root /usr/local/bin/create_user \
     && chmod u=rws,g=x,o=- /usr/local/bin/create_user \
     && rm /tmp/create_user.c
+
+# Install ESP32 toolchain in /opt/esp (181 MB after cleanup)
+# remember https://github.com/RIOT-OS/RIOT/pull/10801 when updating
+RUN echo 'Installing ESP32 toolchain' >&2 && \
+    mkdir -p /opt/esp && \
+    cd /opt/esp && \
+    git clone https://github.com/espressif/esp-idf.git && \
+    cd esp-idf && \
+    git checkout -q f198339ec09e90666150672884535802304d23ec && \
+    git submodule update --init --recursive && \
+    rm -rf .git* docs examples make tools && \
+    rm -f add_path.sh CONTRIBUTING.rst Kconfig Kconfig.compiler && \
+    cd components && \
+    rm -rf app_trace app_update aws_iot bootloader bt coap console cxx \
+           esp_adc_cal espcoredump esp_http_client esp-tls expat fatfs \
+           freertos idf_test jsmn json libsodium log lwip mbedtls mdns \
+           micro-ecc nghttp openssl partition_table pthread sdmmc spiffs \
+           tcpip_adapter ulp vfs wear_levelling xtensa-debug-module && \
+    find . -name '*.[csS]' -exec rm {} \; && \
+    cd /opt/esp && \
+    git clone https://github.com/gschorcht/xtensa-esp32-elf.git && \
+    cd xtensa-esp32-elf && \
+    git checkout -q 414d1f3a577702e927973bd906357ee00d7a6c6c
+
+ENV PATH $PATH:/opt/esp/xtensa-esp32-elf/bin
 
 # RIOT toolchains
 ARG RIOT_TOOLCHAIN_GCC_VERSION=10.1.0
