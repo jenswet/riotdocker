@@ -19,3 +19,6 @@ emlearn==0.10.1
 jinja2==2.11.2
 riotctrl>=0.1.1
 pyhsslms>=1.0.0
+# For clang-tidy
+compiledb>=0.10.1
+compile-commands>=1.1.2

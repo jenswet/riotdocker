@@ -70,6 +70,13 @@ RUN \
         vim-common \
         wget \
         xsltproc \
+    && echo 'Installing LLVM/Clang toolchain' >&2 && \
+    apt-get -y --no-install-recommends install \
+        llvm \
+        clang \
+        clang-format \
+        clang-tidy \
+        clang-tools \
     && echo 'Cleaning up installation files' >&2 && \
     apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
